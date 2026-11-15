@@ -1,19 +1,11 @@
---[[
-    YBA Item Farm (Panda's Build)
-    Ищет предметы в Workspace.Item_Spawns.Items и собирает их.
-]]
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local plr = Players.LocalPlayer
 
--- Настройки
 local FarmEnabled = false
-local SelectedItems = {} -- Сюда пишем предметы, которые фармим (например, {"Mysterious Arrow", "Rokakaka"})
-local ItemFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items") -- Папка со спавном предметов в YBA
+local ItemFolder = Workspace:WaitForChild("Item_Spawns"):WaitForChild("Items")
 
--- Простой интерфейс
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PandaItemFarm"
 ScreenGui.ResetOnSpawn = false
@@ -50,67 +42,51 @@ Info.Font = Enum.Font.Gotham
 Info.TextSize = 12
 Info.Parent = Frame
 
--- Логика
 local function GetHRP()
     local char = plr.Character
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
-local function CollectItem(item)
-    local hrp = GetHRP()
-    if not hrp or not item.PrimaryPart then return end
-    
-    -- Телепорт к предмету
-    hrp.CFrame = item.PrimaryPart.CFrame - Vector3.new(0, 5, 0)
-    task.wait(0.2)
-    
-    -- Прожимаем ProximityPrompt
-    local prompt = item:FindFirstChild("ProximityPrompt")
-    if prompt then
-        fireproximityprompt(prompt)
-        task.wait(0.3)
-    end
-end
-
 local function FindNearestItem()
     local hrp = GetHRP()
     if not hrp then return nil end
-    
     local nearest, minDist = nil, math.huge
     
     for _, item in ipairs(ItemFolder:GetChildren()) do
         if item:IsA("Model") and item.PrimaryPart then
-            -- Если фильтр пустой, берем все. Если нет — только выбранные.
-            local shouldFarm = (#SelectedItems == 0)
-            if not shouldFarm then
-                for _, name in ipairs(SelectedItems) do
-                    if item.Name:find(name) then
-                        shouldFarm = true
-                        break
-                    end
-                end
-            end
-            
-            if shouldFarm then
-                local dist = (item.PrimaryPart.Position - hrp.Position).Magnitude
-                if dist < minDist then
-                    nearest = item
-                    minDist = dist
-                end
+            local dist = (item.PrimaryPart.Position - hrp.Position).Magnitude
+            if dist < minDist then
+                nearest = item
+                minDist = dist
             end
         end
     end
     return nearest
 end
 
--- Цикл фарма
+-- НОВАЯ ЛОГИКА: Плавный шаг вместо телепорта
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait(0.1) do
         if FarmEnabled then
             local target = FindNearestItem()
-            if target then
-                Info.Text = "Лечу к: " .. target.Name
-                CollectItem(target)
+            local hrp = GetHRP()
+            if target and hrp then
+                local targetPos = target.PrimaryPart.Position
+                local dist = (targetPos - hrp.Position).Magnitude
+                
+                Info.Text = "Иду к: " .. target.Name .. " (" .. math.floor(dist) .. " studs)"
+                
+                if dist > 10 then
+                    -- Плавно двигаемся к цели (скорость 60 studs/sec, чтобы не спалиться)
+                    local direction = (targetPos - hrp.Position).Unit
+                    hrp.CFrame = hrp.CFrame + (direction * 0.6) 
+                else
+                    -- Если близко, прожимаем кнопку
+                    local prompt = target:FindFirstChild("ProximityPrompt")
+                    if prompt then
+                        fireproximityprompt(prompt)
+                    end
+                end
             else
                 Info.Text = "Жду спавн предметов..."
             end
@@ -118,7 +94,6 @@ task.spawn(function()
     end
 end)
 
--- Кнопка вкл/выкл
 ToggleBtn.MouseButton1Click:Connect(function()
     FarmEnabled = not FarmEnabled
     ToggleBtn.Text = FarmEnabled and "Farm: ON" or "Farm: OFF"
